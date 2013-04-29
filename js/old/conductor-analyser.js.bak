@@ -1,0 +1,149 @@
+function ConductorAnalyser() {
+  // Ring buffer of times, position and velocity vectors.
+  this.history = new RingBuffer(32);
+  // Latest data index for the ring buffer.
+  this.index = 0;
+  // History of zero accelerations, their angles and times.
+  this.zeros = [];
+
+  // Conducting patterns. Numbers are angles corresponding to the last
+  // direction of the stroke.
+  this.PATTERNS = {
+    two: [45, 90],
+    three: [270, 0, 135],
+    four: [270, 225, 315, 90]
+  };
+  // Threshold for close enough to zero.
+  this.LOW_SPEED = 5;
+  this.HIGH_ACCELERATION = 8;
+  this.TOO_FAST = 200;
+
+  // Current pattern.
+  this.pattern = null;
+  // Current BPM.
+  this.bpm = -1;
+}
+
+ConductorAnalyser.prototype.add = function(x, y) {
+  var data = {};
+  // Convert to a real point.
+  data.position = new Point(x, y);
+  // Keep track of when the point was added.
+  data.time = new Date();
+  // Compute velocity vectors if previous point exists.
+  var prevPoint = this._getLastPoint();
+  if (prevPoint) {
+    data.velocity = data.position.delta(prevPoint.position);
+    if (prevPoint.velocity) {
+      data.acceleration = data.velocity.delta(prevPoint.velocity);
+    }
+  }
+
+  this.history.set(this.index, data);
+  this.index += 1;
+  this._analyze();
+}
+
+ConductorAnalyser.prototype.getAnalysis = function() {
+  return {
+    bpm: this.bpm,
+    pattern: this.pattern
+  }
+};
+
+ConductorAnalyser.prototype._analyze = function() {
+  var lastPoint = this._getLastPoint();
+  // If we don't have velocity and acceleration yet, do nothing.
+  if (!lastPoint.velocity || !lastPoint.acceleration) {
+    return;
+  }
+  var speed = lastPoint.velocity.mag2();
+  //var speed = this._computeAverageSpeed();
+  var acceleration = lastPoint.acceleration.mag2();
+
+  var lastZero = this.zeros[this.zeros.length - 1];
+  // Look for zero velocity vectors with large acceleration.
+  if (speed < this.LOW_SPEED &&
+      acceleration > this.HIGH_ACCELERATION) {
+    if (lastZero && lastPoint.time - lastZero.time < this.TOO_FAST) {
+      // Discard zeros that happen in overly fast succession.
+      return;
+    }
+    // Back track through the velocity history to get angular direction.
+    var angle = this._computeAverageDirection();
+    // Keep track of computed angles and times.
+    this.zeros.push({
+      angle: angle,
+      time: lastPoint.time
+    });
+    console.log(speed, acceleration, angle, lastPoint.time.valueOf() % 10000);
+    // Compare direction to the reference angles for 2/, 3/ and 4/ patterns.
+    var timeSignature = this._estimateTimeSignature();
+    // Maintain a best guess regarding time signature.
+    // Compute BPM based on average historical deltas.
+  }
+}
+
+ConductorAnalyser.prototype._getLastPoint = function() {
+  return this.history.get(this.index - 1);
+}
+
+ConductorAnalyser.prototype._getPointAt = function(offset) {
+  return this.history.get(this.index - offset);
+}
+
+ConductorAnalyser.prototype._computeAverageDirection = function(opts) {
+  opts = opts || {};
+  var start = opts.start || 8;
+  var end = opts.end || 2;
+  var sumX = 0;
+  var sumY = 0;
+
+  for (var i = start; i > end; i--) {
+    var point = this._getPointAt(i);
+    // Sum all of the velocities.
+    sumX += point.velocity.x;
+    sumY += point.velocity.y;
+  }
+  // Compute the angle of the summed velocity vectors.
+  var p = new Point(sumX, sumY);
+  return p.angle();
+}
+
+ConductorAnalyser.prototype._computeAverageSpeed = function(opts) {
+  opts = opts || {};
+  var start = opts.start || 2;
+  var end = opts.end || 0;
+  var sum = 0;
+
+  for (var i = start; i > end; i--) {
+    var point = this._getPointAt(i);
+    if (!point || !point.velocity) {
+      return;
+    }
+    sum += point.velocity.mag2();
+  }
+  return sum / (start - end);
+}
+
+ConductorAnalyser.prototype._estimateTimeSignature = function(opts) {
+  // Look at the this.zeros array and compare it to this.PATTERNS.
+  // First, expand each pattern to be the required length.
+}
+
+function Point(x, y) {
+  this.x = x;
+  this.y = y;
+}
+
+Point.prototype.delta = function(p) {
+  return new Point(p.x - this.x, p.y - this.y);
+}
+
+Point.prototype.mag2 = function() {
+  return this.x * this.x + this.y * this.y;
+}
+
+Point.prototype.angle = function() {
+  return Math.atan2(this.y, this.x) * 180 / Math.PI;
+}

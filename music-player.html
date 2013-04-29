@@ -1,0 +1,24 @@
+<!doctype html>
+<style>
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+</style>
+
+<input type="button" onclick="mp.toggle()" value="Play/Pause"/>
+<input type="range" min="100" max="140" onchange="onTempoChange(this)"/>
+
+<script src="js/music-player.js"></script>
+<script>
+audioContext = new webkitAudioContext();
+var mp = new MusicPlayer();
+
+function onTempoChange(e) {
+  var newTempo = parseInt(e.value);
+  mp.setTempo(newTempo);
+}
+</script>

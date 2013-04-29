@@ -1,0 +1,100 @@
+<!doctype html>
+<style>
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+canvas {
+  width: 100%;
+  height: 100%;
+}
+</style>
+<canvas></canvas>
+
+<script src="js/point.js"></script>
+<script src="js/clusterizer.js"></script>
+<script>
+
+var centroids = [[400, 600], [100, 100], [800, 200]];
+function generateData(n, v) {
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    // Pick a random centroid.
+    var index = Math.floor(Math.random() * centroids.length);
+    var c = centroids[index];
+    // Deviate from it.
+    var rx = (Math.random()-0.5) * v;
+    var ry = (Math.random()-0.5) * v;
+    var d = {
+      point: new Point(c[0] + rx, c[1] + ry),
+      value: index + '_' + i
+    };
+    out.push(d);
+  }
+  return out;
+}
+data = generateData(20, 200);
+
+var clusterizer = new Clusterizer();
+var result = clusterizer.cluster(data);
+print(result);
+render(result);
+  
+function print(result) {
+  var clusters = result.clustered;
+  // Print all of the things.
+  for (var i = 0; i < clusters.length; i++) {
+    var cluster = clusters[i];
+    console.log('Contents of cluster', i, ':');
+    for (var j = 0; j < cluster.length; j++) {
+      var data = cluster[j];
+      console.log(data.value);
+    }
+  }
+}
+
+
+function render(result) {
+  var COLORS = ['red', 'yellow', 'blue', 'orange', 'teal'];
+  var clusters = result.clustered;
+  // Render all the things onto a canvas.
+  var canvas = document.querySelector('canvas');
+  var context = canvas.getContext('2d');
+  canvas.width = document.body.clientWidth;
+  canvas.height = document.body.clientHeight;
+
+  // Draw each centroid.
+  for (var i = 0; i < result.centroids.length; i++) {
+    var centroid = result.centroids[i];
+    context.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    context.fillRect(centroid.x - 100, centroid.y - 100, 200, 200);
+  }
+
+  // Draw each data point.
+  for (var i = 0; i < clusters.length; i++) {
+    var cluster = clusters[i];
+    for (var j = 0; j < cluster.length; j++) {
+      var data = cluster[j];
+      context.fillStyle = COLORS[i%COLORS.length];
+      var x = data.point.x;
+      var y = data.point.y;
+      var s = 20;
+      context.fillRect(x, y, s, s);
+      context.strokeRect(x, y, s, s);
+    }
+  }
+}
+
+// Listen to keypress and regenerate the clustering.
+document.addEventListener('keydown', function(e) {
+  if (e.keyCode == 32) {
+    var result = clusterizer.cluster(data);
+    print(result);
+    render(result);
+  }
+});
+
+</script>
