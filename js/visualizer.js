@@ -52,7 +52,7 @@ Visualizer.prototype.drawCluster = function(x, y) {
       // For each square, determine if it's close enough to the center.
       if (this.distance(i,j, ci,cj) < r) {
         // If it is, color it a certain way.
-        this.colorSquare(i, j, {fill: 'rgba(150, 0, 0, 0.1)'});
+        this.colorSquare(i, j, {fill: 'rgba(150, 0, 0, 0.5)'});
       }
     }
   }
