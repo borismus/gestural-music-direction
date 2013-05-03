@@ -1,120 +1,114 @@
-// Setup pointer lock.
-document.addEventListener('click', function(e) {
-  document.body.webkitRequestPointerLock();
-});
+function init() {
+  // Globals.
+  canvas = document.querySelector('canvas');
+  resize();
 
-var x = 100;
-var y = 100;
+  audioContext = new webkitAudioContext();
+  ctx = canvas.getContext('2d');
+  viz = new Visualizer(canvas);
+  analyser = new ConductorAnalyser();
+  player = new MusicPlayer();
+  isBeat = false;
+  x = 100;
+  y = 100;
 
-// Listen to mousemove events.
-document.addEventListener('mousemove', function(e) {
-  x += e.webkitMovementX;
-  y += e.webkitMovementY;
-});
+  // Listen for resize.
+  window.addEventListener('resize', resize);
 
-// Listen to Leap events.
-Leap.loop(function(frame, done) {
-  var centerX = document.body.offsetWidth/2;
-  var centerY = document.body.offsetHeight/2;
-  var leapX = 0;
-  var leapY = 200;
-  var scaleX = 3;
-  var scaleY = 2;
-  if (frame.hands.length) {
-    var hand = frame.hands[0];
-    var unscaledX = (leapX + hand.palmPosition[0]);
-    var unscaledY = (leapY + -hand.palmPosition[1]);
-    x = scaleX*unscaledX + centerX;
-    y = scaleY*unscaledY + centerY;
+  // Setup pointer lock.
+  document.addEventListener('click', function(e) {
+    document.body.webkitRequestPointerLock();
+  });
+
+  // Listen to mousemove events.
+  document.addEventListener('mousemove', function(e) {
+    x = clamp(x + e.webkitMovementX, [0, canvas.width]);
+    y = clamp(y + e.webkitMovementY, [0, canvas.height]);
+  });
+
+  function clamp(value, range) {
+    return Math.min(Math.max(value, range[0]), range[1]);
   }
 
-  done();
-})
+  // Listen to Leap events.
+  Leap.loop(function(frame, done) {
+    var centerX = document.body.offsetWidth/2;
+    var centerY = document.body.offsetHeight/2;
+    var leapX = 0;
+    var leapY = 200;
+    var scaleX = 3;
+    var scaleY = 2;
+    if (frame.hands.length) {
+      var hand = frame.hands[0];
+      var unscaledX = (leapX + hand.palmPosition[0]);
+      var unscaledY = (leapY + -hand.palmPosition[1]);
+      x = scaleX*unscaledX + centerX;
+      y = scaleY*unscaledY + centerY;
+    }
 
-audioContext = new webkitAudioContext();
-var metronome = new MusicPlayer();
+    done();
+  })
 
+  analyser.onDirChange(function() {
+    //console.log('Dir change!');
+  });
 
-// Setup a render loop which actually draws points and feeds them into
-// the analyser.
-var raf = window.webkitRequestAnimationFrame;
-raf(mainLoop);
+  player.callbacks.beat = function() {
+    isBeat = true;
+  };
+
+  // Setup a render loop which actually draws points and feeds them into
+  // the analyser.
+  var raf = window.webkitRequestAnimationFrame;
+  raf(mainLoop);
+}
 
 function mainLoop() {
-  // Gradually fade to white.
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  // Plot the mouse events on the screen.
-  drawPoint(x, y);
-  // Feed new mouse events into the analyser.
-  analyser.add(x, y);
-  // Plot acceleration and velocity magnitudes over time.
-  //drawVectorMagnitudes();
-  // Draw cluster centroids as they happen.
-  drawCentroids();
-  // Draw direction change positions as they happen.
-  drawDirectionChanges();
-
+  // Step 1: Update models, do analysis.
   var analysis = analyser.getAnalysis();
   if (analysis.tempo && analysis.timeSignature) {
-    if (!metronome.isPlaying) {
-      metronome.play();
+    if (!player.isPlaying) {
+      player.play();
     }
-    metronome.setTempo(analysis.tempo);
-    metronome.setTimeSignature(analysis.timeSignature);
+    player.setTempo(analysis.tempo);
+    player.setTimeSignature(analysis.timeSignature);
+  }
+  analyser.add(x, y);
+
+  // Step 2: Render.
+  viz.drawGrid();
+  if (!player.isLoaded) {
+    viz.drawText('loading, please wait...');
+  } else {
+    if (document.webkitPointerLockElement == null) {
+      viz.drawText('tip: click to pointer lock.');
+    }
+    // Draw cluster centroids as they happen.
+    if (isBeat) {
+      drawClusters();
+      isBeat = false;
+    }
+    // Draw direction change positions as they happen.
+    drawDirectionChanges();
+    // Visualize the frequency spectrum.
+    viz.drawAudioVisualization(player.getFrequencyBins());
+    // Draw the analysis on the chart itself.
+    drawAnalysis(analysis);
   }
 
-  // Draw the analysis on the chart itself.
-  drawAnalysis(analysis);
+  viz.drawPoint(x, y);
 
   // Continue looping forever!
   raf(mainLoop);
 }
 
-
-document.addEventListener('keydown', function(e) {
-  if (e.keyCode == 32) { // Space
-    document.webkitExitPointerLock();
-  }
-})
-
-var analyser = new ConductorAnalyser();
-analyser.onDirChange(function() {
-  console.log('Dir change!');
-});
-
-
-// Drawing stuff (for debugging).
-var lastX = x;
-var lastY = y;
-var canvas = document.querySelector('canvas');
-var ctx = canvas.getContext('2d');
-
 function drawAnalysis(info) {
-  var tsFormat = 'time: ' + (info.timeSignature ? info.timeSignature + '/4' : '?');
-  var bpmFormat = 'tempo: ' + (info.tempo ? info.tempo + ' bpm' : '?');
-
-  // Compute dimensions for the rendered analysis.
-  var width = 320;
-  var height = 240;
-  var x = canvas.width - width - 2;
-  var y = 2
-  var yTs = y + 50;
-  var yBpm = y + 100;
-  var xPad = x + 20;
-  // Clear the top right area.
-  ctx.clearRect(x, y, width, height);
-  ctx.strokeRect(x, y, width, height);
-  ctx.font = '20pt monospace';
-  ctx.fillStyle = 'black';
-  // Render the text.
-  ctx.fillText(tsFormat, xPad, yTs);
-  ctx.strokeText(tsFormat, xPad, yTs);
-  ctx.fillText(bpmFormat, xPad, yBpm);
-  ctx.strokeText(bpmFormat, xPad, yBpm);
+  //var tsFormat = 'time: ' + (info.timeSignature ? info.timeSignature + '/4' : '?');
+  var bpmFormat = (info.tempo ? info.tempo + ' bpm' : '?');
+  viz.drawText(bpmFormat, 'bottom');
 }
 
-function drawCentroids() {
+function drawClusters() {
   // Get last clustering.
   result = analyser.lastClustering;
   if (!result) {
@@ -123,8 +117,7 @@ function drawCentroids() {
   // Draw each centroid.
   for (var i = 0; i < result.centroids.length; i++) {
     var centroid = result.centroids[i];
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.005)';
-    ctx.fillRect(centroid.x - 100, centroid.y - 100, 200, 200);
+    viz.drawCluster(centroid.x, centroid.y);
   }
 }
 
@@ -135,60 +128,13 @@ function drawDirectionChanges() {
   // Draw the most recent direction change.
   var dirChange = analyser.dirChanges.get(analyser.dirChanges.length - 1);
   var point = dirChange.position;
-  ctx.save();
-  ctx.fillStyle = 'red';
-  ctx.fillRect(point.x, point.y, 20, 20);
-  ctx.restore();
+  viz.drawDirectionChange(point.x, point.y);
 }
-
-function drawPoint(x, y) {
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = 'black';
-  ctx.beginPath();
-  ctx.moveTo(lastX, lastY);
-  ctx.lineTo(x, y);
-  ctx.stroke();
-  lastX = x;
-  lastY = y;
-}
-
-var t = 0;
-var lastSpeed = 0;
-var lastDir = 0;
-function drawVectorMagnitudes() {
-  if (!analyser._isReady()) {
-    return;
-  }
-  var dir = analyser._computeAverageDirection();
-  var speed = analyser._computeAverageSpeed();
-
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = 'red';
-  ctx.beginPath();
-  ctx.moveTo(t, lastSpeed);
-  ctx.lineTo(t+1, speed);
-  ctx.stroke();
-
-  ctx.strokeStyle = 'blue';
-  ctx.beginPath();
-  ctx.moveTo(t, lastDir);
-  ctx.lineTo(t+1, dir);
-  ctx.stroke();
-
-
-  lastDir = dir;
-  lastSpeed = speed;
-  t += 1;
-  if (t > canvas.width) {
-    canvas.width = canvas.width;
-    t = 0;
-  }
-}
-
-window.addEventListener('load', resize);
-window.addEventListener('resize', resize);
 
 function resize() {
   canvas.width = document.body.offsetWidth;
   canvas.height = document.body.offsetHeight;
+  viz = new Visualizer(canvas);
 }
+
+window.addEventListener('load', init);

@@ -23,23 +23,33 @@ var raf = window.webkitRequestAnimationFrame;
  *  mp.stop();
  */
 function MusicPlayer() {
-  this.tempo = 120;
-  this.ts = 2;
-  this.fps = 60;
-  this.scheduleAheadTime = 0.01;
-
   // URL of the song resource.
   this.SONG_URL = 'snd/4-4-phantom.mp3';
   // Time between beats in the song.
   this.SONG_BEAT_DELTA = 0.4688;
 
+  this.tempo = 60/this.SONG_BEAT_DELTA;
+  this.ts = 2;
+  this.fps = 60;
+  this.scheduleAheadTime = 0.01;
+  this.loopTimeout = 10;
+  this.isEndFade = true;
+  this.isLoaded = false;
+  this.callbacks = {};
+
   // Load the audio buffer.
-  this.loadSong_(this.SONG_URL, function() {
-    console.log('Song loaded!');
-  });
+  this.loadSong_(this.SONG_URL, this.didSongLoad.bind(this));
 }
 
+MusicPlayer.prototype.didSongLoad = function() {
+  this.isLoaded = true;
+};
+
 MusicPlayer.prototype.play = function() {
+  if (!this.isLoaded) {
+    console.error('Attempt to play song before loaded.');
+    return;
+  }
   this.isPlaying = true;
   this.grainOffset = 0;
   this.nextNoteTime = audioContext.currentTime;
@@ -62,8 +72,11 @@ MusicPlayer.prototype.setTimeSignature = function(ts) {
   this.ts = ts;
 };
 
+MusicPlayer.prototype.onLoaded = function(callback) {
+  this.callback = callback;
+};
+
 MusicPlayer.prototype.syncBeat = function() {
-  console.log('Sync beat.');
   var secondsPerBeat = 60.0 / this.tempo;
   this.nextNoteTime = audioContext.currentTime + secondsPerBeat;
   var rate = this.getPlaybackRate_();
@@ -78,24 +91,38 @@ MusicPlayer.prototype.loop_ = function() {
   }
   // Loop if we're still playing.
   if (this.isPlaying) {
-    raf(this.loop_.bind(this));
+    setTimeout(this.loop_.bind(this), this.loopTimeout);
   }
 };
 
 MusicPlayer.prototype.scheduleSegment_ = function(grainOffset, time) {
   // Get the part of the buffer that we're going to play.
   var source = audioContext.createBufferSource();
+  var gain = audioContext.createGainNode();
+  var analyser = audioContext.createAnalyser();
   source.buffer = this.buffer;
-  source.connect(audioContext.destination);
+  source.connect(gain);
+  gain.connect(analyser);
+  analyser.minDecibels = -140;
+  analyser.maxDecibels = 0;
+  analyser.connect(audioContext.destination);
+  this.analyser = analyser;
 
   var rate = this.getPlaybackRate_();
   source.playbackRate.value = rate;
 
   var secondsPerBeat = 60.0 / this.tempo;
+  // Do a quick fade-out to minimize weird artifacts.
+  if (this.isEndFade) {
+    var endTime = time + secondsPerBeat;
+    gain.gain.setValueAtTime(1, endTime - 0.05);
+    gain.gain.linearRampToValueAtTime(0, endTime);
+  }
+
   source.noteGrainOn(time, grainOffset, secondsPerBeat*rate);
-  setTimeout(function() {
-    console.log('Beat!');
-  }, secondsPerBeat*rate * 1000);
+  if (this.callbacks.beat) {
+    this.callbacks.beat();
+  }
 }
 
 MusicPlayer.prototype.nextNote_ = function() {
@@ -132,4 +159,16 @@ MusicPlayer.prototype.loadSong_ = function(url, callback) {
 MusicPlayer.prototype.getPlaybackRate_ = function() {
   var nativeTempo = 60/this.SONG_BEAT_DELTA;
   return this.tempo/120;
+};
+
+/**
+ * Returns the FFT bins.
+ */
+MusicPlayer.prototype.getFrequencyBins = function() {
+  if (!this.isPlaying) {
+    return [];
+  }
+  var freqs = new Uint8Array(this.analyser.frequencyBinCount);
+  this.analyser.getByteFrequencyData(freqs);
+  return freqs;
 };

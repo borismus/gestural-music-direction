@@ -1,0 +1,82 @@
+<!doctype html>
+<link href='http://fonts.googleapis.com/css?family=Press+Start+2P' rel='stylesheet' type='text/css'>
+<style>
+body {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+canvas {
+  width: 100%;
+  height: 100%;
+}
+</style>
+<canvas></canvas>
+
+<script src="js/visualizer.js"></script>
+<script>
+window.addEventListener('load', init);
+raf = window.webkitRequestAnimationFrame;
+
+function init() {
+  var canvas = document.querySelector('canvas');
+  canvas.width = document.body.offsetWidth;
+  canvas.height = document.body.offsetHeight;
+  height = canvas.height;
+  width = canvas.width;
+  viz = new Visualizer(canvas);
+
+  raf(loop);
+}
+
+isLoading = true;
+var counter = 0;
+var x = 0;
+var y = 0;
+
+function loop(t) {
+  if (counter > 100) {
+    isLoading = false;
+  }
+  viz.drawGrid();
+
+  if (isLoading) {
+    viz.drawText('loading, please wait...');
+  } else {
+    viz.drawText('tip: click to mouse lock.');
+    if (counter % 200 == 0) {
+      viz.drawCluster(800, 200);
+    }
+    if (counter % 20 == 0) {
+      viz.drawDirectionChange(Math.random() * width, Math.random() * height);
+    }
+    if (counter % 300 == 0) {
+      viz.drawAudioVisualization(randomBins(64));
+    }
+  }
+
+  viz.drawPoint(x, y);
+
+  counter++;
+  raf(loop)
+}
+
+function randomBins(numBins) {
+  var out = [];
+  for (var i = 0; i < numBins; i++) {
+    out.push(Math.random() * 255);
+  }
+  return out;
+}
+
+document.addEventListener('mousemove', function(e) {
+  x = clamp(x + e.webkitMovementX, [0, width]);
+  y = clamp(y + e.webkitMovementY, [0, height]);
+});
+
+function clamp(value, range) {
+  return Math.min(Math.max(value, range[0]), range[1]);
+}
+</script>
